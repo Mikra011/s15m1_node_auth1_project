@@ -1,6 +1,14 @@
 // Require `checkUsernameFree`, `checkUsernameExists` and `checkPasswordLength`
 // middleware functions from `auth-middleware.js`. You will need them here!
 const router = require('express').Router()
+const bcrypt = require('bcryptjs')
+const Users = require('../users/users-model')
+
+const {
+  checkUsernameFree,
+  checkUsernameExists,
+  checkPasswordLength
+} = require('./auth-middleware')
 
 /**
   1 [POST] /api/auth/register { "username": "sue", "password": "1234" }
@@ -24,8 +32,15 @@ const router = require('express').Router()
     "message": "Password must be longer than 3 chars"
   }
  */
-router.post('/register', (req, res, next) => {
-  res.json('register')
+router.post('/register', checkUsernameFree, checkPasswordLength, async (req, res, next) => {
+  try {
+    const { username, password } = req.body
+    const hash = bcrypt.hashSync(password, 8)
+    const newUser = await Users.add({ username, password: hash })
+    res.status(200).json(newUser)
+  } catch (err) {
+    next(err)
+  }
 })
 
 /**
@@ -43,8 +58,18 @@ router.post('/register', (req, res, next) => {
     "message": "Invalid credentials"
   }
  */
-router.post('/login', (req, res, next) => {
-  res.json('login')
+router.post('/login', checkUsernameExists, async (req, res, next) => {
+  try {
+    const { password } = req.body
+    if (bcrypt.compareSync(password, req.user.password)) {
+      req.session.user = req.user;
+      res.status(200).json({ message: `Welcome ${req.user.username}!` })
+    } else {
+      res.status(401).json({ message: 'Invalid credentials' })
+    }
+  } catch (err) {
+    next(err)
+  }
 })
 
 /**
@@ -63,7 +88,17 @@ router.post('/login', (req, res, next) => {
   }
  */
 router.get('/logout', (req, res, next) => {
-  res.json('logout')
+  if (req.session && req.session.user) {
+    req.session.destroy(err => {
+      if (err) {
+        res.status(500).json({ message: 'Failed to logout' })
+      } else {
+        res.json({ message: 'logged out' })
+      }
+    })
+  } else {
+    res.json({ message: 'no session' })
+  }
 })
 
 // Don't forget to add the router to the `exports` object so it can be required in other modules
